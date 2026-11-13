@@ -1,0 +1,161 @@
+  // ===== DATOS (fuente: Excel "MMR según encuesta") =====
+  const PLAYERS = [
+    { id: 'takagi',   name: 'Takagi',               mmr: 5306, pos: '4' },
+    { id: 'jordan',   name: 'Jordan',               mmr: 5167, pos: '1', captain: true },
+    { id: 'leny',     name: 'Leny Conislla',        mmr: 5000, pos: '1' },
+    { id: 'barbero',  name: 'El Barbero (Raidel)',  mmr: 4750, pos: '1', captain: true },
+    { id: 'picoy',    name: 'Picoy',                mmr: 4667, pos: '5' },
+    { id: 'rankc',    name: 'RankCollector',        mmr: 4611, pos: '1' },
+    { id: 'owari',    name: 'Owari',                mmr: 4605, pos: '2', captain: true },
+    { id: 'tom',      name: 'Tom',                  mmr: 3952, pos: '2' },
+    { id: 'choleral', name: 'Choleral',             mmr: 3818, pos: '1' },
+    { id: 'jh',       name: 'Jh (primo de Tom)',    mmr: 3727, pos: '4' },
+    { id: 'megaman',  name: 'Megaman',              mmr: 3278, pos: '5' },
+    { id: 'kanay',    name: 'Kanay',                mmr: 3184, pos: '4' },
+    { id: 'mania',    name: 'Manía Blaz',           mmr: 3182, pos: '4' },
+    { id: 'wallace',  name: 'Wallace',              mmr: 3167, pos: '5' },
+    { id: 'charles',  name: 'Charles',              mmr: 3125, pos: '3' },
+    { id: 'patron',   name: 'El patrón',            mmr: 3036, pos: '4' },
+    { id: 'lenin',    name: 'Leninblackiss',        mmr: 3000, pos: '2' },
+    { id: 'fyodor',   name: 'Fyodor (Fiodor)',      mmr: 2842, pos: '2', captain: true },
+    { id: 'rata',     name: 'La rata',              mmr: 2567, pos: '2' },
+    { id: 'yiyo',     name: 'Yiyo',                 mmr: 2409, pos: '2' }
+  ];
+  const BY_ID = Object.fromEntries(PLAYERS.map(p => [p.id, p]));
+  const CAPS = ['jordan', 'owari', 'fyodor', 'barbero']; // orden base del sorteo
+  const CAP_LABEL = { jordan: 'Jordan', owari: 'Owari', fyodor: 'Fyodor', barbero: 'El Barbero' };
+  const TOTAL = PLAYERS.reduce((a, p) => a + p.mmr, 0);
+  const TARGET = TOTAL / 4;
+  const TOTAL_PICKS = 16;
+
+  const initialState = () => ({ v: 1, first: null, started: false, finished: false, picks: [] });
+
+  // ===== SORTEO =====
+  // rand32: función que devuelve un entero uniforme de 32 bits. 2^32 es múltiplo de 4 => sin sesgo.
+  function drawWinner(rand32) { return CAPS[rand32() % 4]; }
+
+  // ===== SNAKE DRAFT =====
+  function snakeOrder(first) {
+    const i = CAPS.indexOf(first);
+    if (i < 0) throw new Error('Capitán inválido');
+    const rot = CAPS.slice(i).concat(CAPS.slice(0, i));
+    let out = [];
+    for (let r = 0; r < 4; r++) out = out.concat(r % 2 === 0 ? rot : rot.slice().reverse());
+    return out;
+  }
+  function turn(s) {
+    const n = s.picks.length;
+    if (s.first == null || n >= TOTAL_PICKS) return { done: true, number: n };
+    const order = snakeOrder(s.first);
+    return {
+      done: false, number: n + 1, round: Math.floor(n / 4) + 1,
+      captain: order[n], next: order[n + 1] || null, order
+    };
+  }
+  function available(s) {
+    const taken = new Set(s.picks.map(x => x.player));
+    return PLAYERS.filter(p => !p.captain && !taken.has(p.id)).sort((a, b) => b.mmr - a.mmr);
+  }
+  function pick(s, cap, pid) {
+    if (s.first == null || !s.started) throw new Error('El draft no ha comenzado');
+    if (s.finished) throw new Error('El torneo ya finalizó');
+    const t = turn(s);
+    if (t.done) throw new Error('El draft ya terminó');
+    if (t.captain !== cap) throw new Error('Fuera de turno');
+    const p = BY_ID[pid];
+    if (!p) throw new Error('Jugador inexistente');
+    if (p.captain) throw new Error('Los capitanes no se seleccionan entre sí');
+    if (s.picks.some(x => x.player === pid)) throw new Error('Jugador ya seleccionado');
+    return Object.assign({}, s, { picks: s.picks.concat([{ captain: cap, player: pid }]) });
+  }
+  function undo(s) {
+    if (!s.picks.length) return s;
+    return Object.assign({}, s, { finished: false, picks: s.picks.slice(0, -1) });
+  }
+
+  // ===== EQUIPOS Y ESTADÍSTICAS =====
+  function teams(s) {
+    return CAPS.map(c => {
+      const members = s.picks.filter(x => x.captain === c).map(x => BY_ID[x.player]);
+      const total = BY_ID[c].mmr + members.reduce((a, p) => a + p.mmr, 0);
+      return { captain: c, cap: BY_ID[c], members, total, size: 1 + members.length };
+    });
+  }
+  function projection(s) {
+    const pool = available(s);
+    const avg = pool.length ? pool.reduce((a, p) => a + p.mmr, 0) / pool.length : 0;
+    return teams(s).map(t => t.total + (5 - t.size) * avg);
+  }
+  function stats(s) {
+    const ts = teams(s);
+    const totals = ts.map(t => t.total);
+    const max = Math.max(...totals), min = Math.min(...totals);
+    return {
+      totals, max, min, spread: max - min,
+      avg: totals.reduce((a, b) => a + b, 0) / 4,
+      maxTeam: ts[totals.indexOf(max)].captain, minTeam: ts[totals.indexOf(min)].captain
+    };
+  }
+  function balanceLevel(spread) {
+    if (spread <= 300) return { key: 'excelente', label: 'EXCELENTE', cls: 'green' };
+    if (spread <= 700) return { key: 'bueno', label: 'BUENO', cls: 'green' };
+    if (spread <= 1200) return { key: 'aceptable', label: 'ACEPTABLE', cls: 'yellow' };
+    return { key: 'desigual', label: 'DESIGUAL', cls: 'red' };
+  }
+  function deviationClass(dev) {
+    const a = Math.abs(dev);
+    return a <= 250 ? 'green' : a <= 600 ? 'yellow' : 'red';
+  }
+
+  // ===== RECOMENDACIONES (nunca eligen) =====
+  // Simula el resto del draft: cada capitán toma el jugador más cercano a su "MMR ideal por pick".
+  function simulate(totals, left, pool, seq) {
+    totals = Object.assign({}, totals); left = Object.assign({}, left); pool = pool.slice();
+    for (const c of seq) {
+      const need = (TARGET - totals[c]) / left[c];
+      let bi = 0, bd = Infinity;
+      pool.forEach((p, i) => {
+        const d = Math.abs(p.mmr - need);
+        if (d < bd || (d === bd && p.mmr > pool[bi].mmr)) { bd = d; bi = i; }
+      });
+      totals[c] += pool[bi].mmr; left[c]--; pool.splice(bi, 1);
+    }
+    const v = Object.values(totals);
+    return { spread: Math.max(...v) - Math.min(...v), totals };
+  }
+  function recommend(s) {
+    const t = turn(s);
+    if (t.done) return [];
+    const ts = teams(s);
+    const totals = {}, left = {};
+    ts.forEach(x => { totals[x.captain] = x.total; left[x.captain] = 5 - x.size; });
+    const need = (TARGET - totals[t.captain]) / left[t.captain];
+    const seq = t.order.slice(s.picks.length + 1);
+    const pool = available(s);
+    return pool.map(p => {
+      const tt = Object.assign({}, totals); tt[t.captain] += p.mmr;
+      const ll = Object.assign({}, left); ll[t.captain]--;
+      const sim = simulate(tt, ll, pool.filter(q => q.id !== p.id), seq);
+      return { player: p, spread: sim.spread, gap: Math.abs(p.mmr - need), need };
+    }).sort((a, b) => a.spread - b.spread || a.gap - b.gap || b.player.mmr - a.player.mmr);
+  }
+
+  // ===== VALIDACIÓN FINAL =====
+  function validateFinal(s) {
+    const errs = [];
+    const ts = teams(s);
+    ts.forEach(t => { if (t.size !== 5) errs.push('Equipo ' + t.captain + ' tiene ' + t.size + ' integrantes'); });
+    const ids = ts.flatMap(t => [t.captain].concat(t.members.map(m => m.id)));
+    if (new Set(ids).size !== 20) errs.push('Hay jugadores repetidos o faltantes');
+    if (s.picks.length !== TOTAL_PICKS) errs.push('Selecciones: ' + s.picks.length + '/16');
+    return errs;
+  }
+
+  const api = { PLAYERS, BY_ID, CAPS, CAP_LABEL, TOTAL, TARGET, TOTAL_PICKS, initialState, drawWinner, snakeOrder, turn,
+    available, pick, undo, teams, projection, stats, balanceLevel, deviationClass, recommend, validateFinal };
+
+export {
+  PLAYERS, BY_ID, CAPS, CAP_LABEL, TOTAL, TARGET, TOTAL_PICKS, initialState, drawWinner, snakeOrder, turn,
+  available, pick, undo, teams, projection, stats, balanceLevel, deviationClass, recommend, validateFinal
+};
+export default api;
