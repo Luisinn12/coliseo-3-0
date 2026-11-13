@@ -30,13 +30,44 @@ t('sorteo: 4 ganadores posibles, ~25% c/u', () => {
   Object.values(cnt).forEach(v => assert(Math.abs(v / N - 0.25) < 0.01));
   assert.deepEqual([0,1,2,3].map(r => C.drawWinner(() => r)).sort(), [...C.CAPS].sort());
 });
-t('snake: ejemplo Jordan y alternancia para todos los ganadores', () => {
-  assert.deepEqual(C.snakeOrder('jordan'), ['jordan','owari','fyodor','barbero','barbero','fyodor','owari','jordan','jordan','owari','fyodor','barbero','barbero','fyodor','owari','jordan']);
-  C.CAPS.forEach(f => {
-    const o = C.snakeOrder(f); assert.equal(o.length, 16); assert.equal(o[0], f);
-    for (let r = 0; r < 4; r++) { const row = o.slice(r*4, r*4+4); assert.equal(new Set(row).size, 4);
-      if (r) assert.deepEqual(row, o.slice((r-1)*4, r*4).slice().reverse()); }
-    C.CAPS.forEach(c => assert.equal(o.filter(x => x === c).length, 4));
+t('rotación de prioridades: ejemplo del enunciado (gana Jordan)', () => {
+  const L = { jordan: 'Jordan', owari: 'Owari', fyodor: 'Fyodor', barbero: 'El Barbero' };
+  const names = r => r.map(c => L[c]);
+  const R = C.roundOrders('jordan');
+  assert.deepEqual(names(R[0]), ['Jordan', 'Owari', 'Fyodor', 'El Barbero']);
+  assert.deepEqual(names(R[1]), ['El Barbero', 'Fyodor', 'Owari', 'Jordan']);
+  assert.deepEqual(names(R[2]), ['Fyodor', 'El Barbero', 'Jordan', 'Owari']);
+  assert.deepEqual(names(R[3]), ['Owari', 'Jordan', 'El Barbero', 'Fyodor']);
+  assert.deepEqual(C.draftOrder('jordan'), [].concat(...R));
+  assert.equal(C.draftOrder('jordan').length, 16);
+});
+t('rotación: reglas R2/R3/R4 y justicia (cada capitán 1.º, 2.º, 3.º y 4.º exactamente una vez) con cualquier ganador', () => {
+  C.CAPS.forEach(first => {
+    const [r1, r2, r3, r4] = C.roundOrders(first);
+    assert.equal(r1[0], first);                                   // el ganador abre la ronda 1
+    assert.deepEqual([...r1].sort(), [...C.CAPS].sort());         // R1 es permutación de los 4
+    assert.deepEqual(r2, r1.slice().reverse());                   // R2 = R1 invertida
+    assert.deepEqual(r3, [r1[2], r1[3], r1[0], r1[1]]);           // R3 = R1 desplazada desde su 3.er capitán
+    assert.equal(r3[0], r1[2]);
+    assert.deepEqual(r4, r3.slice().reverse());                   // R4 = R3 invertida
+    C.CAPS.forEach(c => {
+      const pos = [r1, r2, r3, r4].map(r => r.indexOf(c) + 1).sort();
+      assert.deepEqual(pos, [1, 2, 3, 4], c + ' con ' + first);   // una vez cada posición
+    });
+    for (let col = 0; col < 4; col++) assert.equal(new Set([r1, r2, r3, r4].map(r => r[col])).size, 4); // cuadrado latino
+    const o = C.draftOrder(first); C.CAPS.forEach(c => assert.equal(o.filter(x => x === c).length, 4));
+  });
+  console.log('   posiciones por capitán (R1,R2,R3,R4), gana Owari: ' + C.CAPS.map(c => c + '=' + C.roundOrders('owari').map(r => r.indexOf(c) + 1).join('')).join(' '));
+});
+t('el turno sigue exactamente el orden de rotación', () => {
+  C.CAPS.forEach(first => {
+    let s = started(first); const exp = C.draftOrder(first);
+    for (let i = 0; i < 16; i++) {
+      const tn = C.turn(s); assert.equal(tn.captain, exp[i]); assert.equal(tn.round, Math.floor(i / 4) + 1); assert.equal(tn.number, i + 1);
+      assert.equal(tn.next, exp[i + 1] || null);
+      const o = allowedList(s, tn.captain); s = C.pick(s, tn.captain, o[0].id);
+    }
+    assert.equal(C.turn(s).done, true);
   });
 });
 t('validaciones básicas: turno, repetido, capitán, sin sorteo', () => {

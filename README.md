@@ -1,6 +1,6 @@
 # COLISEO 3.0 – Draft de Capitanes
 
-Simulador de draft para el torneo Coliseo 3.0 (Dota 2): sorteo del primer turno, Snake Draft de 16 selecciones,
+Simulador de draft para el torneo Coliseo 3.0 (Dota 2): sorteo del primer turno, rotación de prioridades en 4 rondas (16 selecciones),
 balance de MMR en vivo, recomendaciones (nunca eligen por el capitán) y pantalla final exportable a PNG.
 
 React 19 + Vite. Sin backend: el progreso se guarda en `localStorage` (clave `coliseo30_state_v1`).
@@ -12,10 +12,24 @@ npm install
 npm run dev        # desarrollo en http://localhost:5173
 npm run build      # genera ./dist
 npm run preview    # sirve ./dist
-npm test           # pruebas de la lógica (sorteo, snake, 16 picks, deshacer, sumas)
+npm test           # pruebas de la lógica (sorteo, rotación de rondas, 16 picks, límite de MMR, deshacer, sumas)
 ```
 
 Requiere Node.js 18 o superior.
+
+## Orden de elección (rotación de prioridades)
+
+El sorteo (aleatorio, uniforme, con `crypto.getRandomValues`) decide quién elige primero; los demás siguen en el orden
+base Jordan → Owari → Fyodor → El Barbero (cíclico). Con R1 = [a, b, c, d]:
+
+| Ronda | Orden |
+|---|---|
+| 1 | a, b, c, d |
+| 2 | d, c, b, a (R1 invertida) |
+| 3 | c, d, a, b (R1 desplazada desde su 3.er capitán) |
+| 4 | b, a, d, c (R3 invertida) |
+
+Cada capitán obtiene exactamente una vez la 1.ª, 2.ª, 3.ª y 4.ª posición (`roundOrders()` en `src/logic/coliseo.js`).
 
 ## Restricción de MMR por equipo
 
@@ -36,7 +50,7 @@ Requiere Node.js 18 o superior.
 
 ```
 src/
-  logic/coliseo.js        datos (20 jugadores), sorteo, Snake Draft, cálculos y recomendaciones
+  logic/coliseo.js        datos (20 jugadores), sorteo, rotación de rondas, cálculos y recomendaciones
   logic/coliseo.test.js   pruebas automáticas de la lógica
   components/             Hero, DrawScreen (ruleta), DraftScreen, TeamCard, FinalScreen, Modal
   utils/                  formato, almacenamiento local, efectos, exportación PNG/texto

@@ -39,19 +39,24 @@
   // rand32: función que devuelve un entero uniforme de 32 bits. 2^32 es múltiplo de 4 => sin sesgo.
   function drawWinner(rand32) { return CAPS[rand32() % 4]; }
 
-  // ===== SNAKE DRAFT =====
-  function snakeOrder(first) {
+  // ===== ROTACIÓN DE PRIORIDADES (4 rondas) =====
+  // R1: el ganador del sorteo y luego los demás en el orden base (Jordan, Owari, Fyodor, Barbero, cíclico).
+  // R2: R1 invertida.  R3: R1 desplazada, empezando por su 3.er capitán.  R4: R3 invertida.
+  // Cada capitán obtiene exactamente una vez la 1.ª, 2.ª, 3.ª y 4.ª posición de elección.
+  function roundOrders(first) {
     const i = CAPS.indexOf(first);
     if (i < 0) throw new Error('Capitán inválido');
-    const rot = CAPS.slice(i).concat(CAPS.slice(0, i));
-    let out = [];
-    for (let r = 0; r < 4; r++) out = out.concat(r % 2 === 0 ? rot : rot.slice().reverse());
-    return out;
+    const r1 = CAPS.slice(i).concat(CAPS.slice(0, i));
+    const r2 = r1.slice().reverse();
+    const r3 = [r1[2], r1[3], r1[0], r1[1]];
+    const r4 = r3.slice().reverse();
+    return [r1, r2, r3, r4];
   }
+  function draftOrder(first) { return [].concat.apply([], roundOrders(first)); }
   function turn(s) {
     const n = s.picks.length;
     if (s.first == null || n >= TOTAL_PICKS) return { done: true, number: n };
-    const order = snakeOrder(s.first);
+    const order = draftOrder(s.first);
     return {
       done: false, number: n + 1, round: Math.floor(n / 4) + 1,
       captain: order[n], next: order[n + 1] || null, order
@@ -255,12 +260,12 @@
     return errs;
   }
 
-  const api = { PLAYERS, BY_ID, CAPS, CAP_LABEL, TOTAL, TARGET, TOTAL_PICKS, initialState, drawWinner, snakeOrder, turn,
+  const api = { PLAYERS, BY_ID, CAPS, CAP_LABEL, TOTAL, TARGET, TOTAL_PICKS, initialState, drawWinner, roundOrders, draftOrder, turn,
     available, pick, undo, teams, projection, stats, balanceLevel, deviationClass, recommend, validateFinal,
     MARGIN, LIMIT, LOWER_GUIDE, feasible, check, options, sanitize };
 
 export {
-  PLAYERS, BY_ID, CAPS, CAP_LABEL, TOTAL, TARGET, TOTAL_PICKS, initialState, drawWinner, snakeOrder, turn,
+  PLAYERS, BY_ID, CAPS, CAP_LABEL, TOTAL, TARGET, TOTAL_PICKS, initialState, drawWinner, roundOrders, draftOrder, turn,
   available, pick, undo, teams, projection, stats, balanceLevel, deviationClass, recommend, validateFinal,
   MARGIN, LIMIT, LOWER_GUIDE, feasible, check, options, sanitize
 };

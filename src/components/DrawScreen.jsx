@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import * as C from '../logic/coliseo.js';
 import { burst, rand32 } from '../utils/effects.js';
+import OrderPanel from './OrderPanel.jsx';
 
 function drawWheel(cv, rot) {
   const ctx = cv.getContext('2d'), S = cv.width, r = S / 2 - 8;
@@ -22,7 +23,7 @@ export default function DrawScreen({ first, onWinner, onStart, onNew }) {
   const rafRef = useRef(0);
   const [spinning, setSpinning] = useState(false);
   const has = !!first;
-  const order = has ? C.snakeOrder(first).slice(0, 4) : [];
+  const order = has ? C.roundOrders(first)[0] : [];
 
   // redibuja la ruleta tras cada render (conserva el ángulo actual)
   useEffect(() => { if (canvasRef.current) drawWheel(canvasRef.current, rotRef.current); });
@@ -58,9 +59,7 @@ export default function DrawScreen({ first, onWinner, onStart, onNew }) {
             <div className="order" style={{ marginTop: 10 }}>
               {order.map((c, i) => <div key={c} className="o"><b>{i + 1}º</b>{C.CAP_LABEL[c]}</div>)}
             </div>
-            <div className="hint" style={{ textAlign: 'center' }}>
-              Snake: R1 {order.map(c => C.CAP_LABEL[c].split(' ').pop()).join(' → ')} · R2 en sentido inverso · R3 como R1 · R4 como R2
-            </div>
+            <OrderPanel first={first} />
           </>
         )}
       </div>
