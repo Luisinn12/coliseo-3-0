@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import * as C from '../logic/coliseo.js';
 import { fmt, sgn } from '../utils/format.js';
 import TeamCard from './TeamCard.jsx';
@@ -6,6 +6,21 @@ import TeamCard from './TeamCard.jsx';
 export default function DraftScreen({ state, selected, onSelect, flash, onConfirm, onUndo, onReset, onFinish }) {
   const tn = C.turn(state), ts = C.teams(state), proj = C.projection(state), pool = C.available(state);
   const rec = useMemo(() => C.recommend(state), [state]);
+  // disponibilidad de cada jugador para el capitán en turno (límite de MMR + draft completable)
+  const opts = useMemo(() => (tn.done ? {} : C.options(state, tn.captain)), [state]);
+  const allowedByTeam = useMemo(() => {
+    const out = {};
+    C.teams(state).forEach(t => { out[t.captain] = t.size >= 5 ? 0 : C.available(state).filter(p => C.check(state, t.captain, p.id).ok).length; });
+    return out;
+  }, [state]);
+  const [info, setInfo] = useState(null);
+  useEffect(() => { setInfo(null); }, [state.picks.length]);
+  const pickPlayer = (p) => {
+    if (done) return;
+    const o = opts[p.id];
+    if (o && !o.ok) { onSelect(null); setInfo(o.message); return; }
+    setInfo(null); onSelect(p.id);
+  };
   const top = rec.slice(0, 3);
   const recRank = {}; top.forEach((r, i) => { recRank[r.player.id] = i + 1; });
   const done = tn.done;
@@ -14,7 +29,8 @@ export default function DraftScreen({ state, selected, onSelect, flash, onConfir
   const selP = selected && C.BY_ID[selected];
   const capTeam = !done && ts.find(t => t.captain === tn.captain);
   const ideal = !done && (C.TARGET - capTeam.total) / (5 - capTeam.size);
-  const over = selP && !done && (capTeam.total + selP.mmr - C.TARGET > 0);
+  const selOk = selP && !done && opts[selP.id] && opts[selP.id].ok;
+  const afterSel = selOk ? opts[selP.id].newTotal : null;
 
   return (
     <>
@@ -33,25 +49,34 @@ export default function DraftScreen({ state, selected, onSelect, flash, onConfir
         ))}
       </div>
       <div className="teams">
-        {ts.map((t, i) => <TeamCard key={t.captain} team={t} proj={proj[i]} tn={tn} flashCap={flash.cap} newPick={flash.pick} />)}
+        {ts.map((t, i) => <TeamCard key={t.captain} team={t} proj={proj[i]} tn={tn} flashCap={flash.cap} newPick={flash.pick} allowed={allowedByTeam[t.captain]} poolSize={pool.length} />)}
       </div>
       <div className="card" style={{ marginTop: 12, padding: 10 }}>
         <div className="kv" style={{ justifyContent: 'center', gap: 18, flexWrap: 'wrap', fontSize: 16 }}>
           <span>Mayor: <b>{fmt(st.max)}</b></span><span>Menor: <b>{fmt(st.min)}</b></span>
           <span>Diferencia máx.: <b>{fmt(st.spread)}</b></span><span>Objetivo: <b>{C.TARGET.toFixed(2)}</b></span>
+          <span>Límite por equipo: <b>{fmt(C.LIMIT)}</b></span>
         </div>
+        <div className="lim-note">Límite inferior orientativo {fmt(C.LOWER_GUIDE)} · el margen de {C.MARGIN} MMR es una tolerancia, no una meta</div>
       </div>
       <div className="main">
         <div className="card">
-          <div className="hd"><span>JUGADORES DISPONIBLES ({pool.length})</span><span style={{ fontFamily: 'Rajdhani', fontSize: 13, color: 'var(--mut)' }}>Elige libremente · ★ = sugerido</span></div>
+          <div className="hd"><span>JUGADORES DISPONIBLES ({pool.length})</span><span style={{ fontFamily: 'Rajdhani', fontSize: 13, color: 'var(--mut)' }}>Elige libremente · ★ = sugerido · 🔒 = bloqueado</span></div>
           <div className="pgrid">
-            {pool.length ? pool.map(p => (
-              <button key={p.id} className={'pl' + (selected === p.id ? ' sel' : '')} disabled={done} onClick={() => !done && onSelect(p.id)}>
-                {recRank[p.id] && <span className="rc">★ {recRank[p.id]}</span>}
-                <div className="nm">{p.name}</div><div className="mm">{fmt(p.mmr)}</div>
-                <div style={{ fontSize: 13, color: 'var(--mut)' }}>Pos favorita {p.pos}</div>
-              </button>
-            )) : <div className="hint">No quedan jugadores.</div>}
+            {pool.length ? pool.map(p => {
+              const o = opts[p.id], locked = !done && o && !o.ok;
+              return (
+                <button key={p.id} className={'pl' + (selected === p.id ? ' sel' : '') + (locked ? ' locked' : '')}
+                  disabled={done} aria-disabled={locked ? 'true' : undefined}
+                  title={locked ? o.message : undefined} onClick={() => pickPlayer(p)}>
+                  {recRank[p.id] && !locked && <span className="rc">★ {recRank[p.id]}</span>}
+                  <div className="nm">{locked && <span className="lock" role="img" aria-label="bloqueado">🔒</span>}{p.name}</div>
+                  <div className="mm">{fmt(p.mmr)}</div>
+                  <div style={{ fontSize: 13, color: 'var(--mut)' }}>Pos favorita {p.pos}</div>
+                  {locked && <div className="why">{o.reason === 'limit' ? `Excede el límite por ${fmt(o.excess)}` : 'Dejaría el draft sin solución'}</div>}
+                </button>
+              );
+            }) : <div className="hint">No quedan jugadores.</div>}
           </div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -62,7 +87,7 @@ export default function DraftScreen({ state, selected, onSelect, flash, onConfir
                 <div className="hint">Para <b>{C.CAP_LABEL[tn.captain]}</b>: MMR ideal por pick ≈ <b>{fmt(ideal)}</b>. Sólo orientan; puedes elegir a cualquiera.</div>
                 <div className="rec">
                   {top.map((r, i) => (
-                    <button key={r.player.id} className="it" onClick={() => onSelect(r.player.id)}>
+                    <button key={r.player.id} className="it" onClick={() => pickPlayer(r.player)}>
                       <span><b>{i + 1}. {r.player.name}</b><small>Diferencia final estimada entre equipos: {fmt(r.spread)}</small></span>
                       <span className="mm" style={{ fontFamily: 'Cinzel', color: 'var(--gold2)', fontWeight: 700 }}>{fmt(r.player.mmr)}</span>
                     </button>
@@ -91,14 +116,16 @@ export default function DraftScreen({ state, selected, onSelect, flash, onConfir
       </div>
 
       <div className="dock">
-        <div className="sel">
-          {done ? 'Las 16 selecciones están completas.' : selP ? (
-            <>{C.CAP_LABEL[tn.captain]} elige a <b>{selP.name}</b> ({fmt(selP.mmr)}){over ? ' · supera el objetivo (permitido)' : ''}</>
+        <div className={'sel' + (info ? ' warn' : selOk ? ' okmsg' : '')}>
+          {done ? 'Las 16 selecciones están completas.' : info ? (
+            <>🔒 {info}</>
+          ) : selOk ? (
+            <>✔ Selección permitida: {C.CAP_LABEL[tn.captain]} elige a <b>{selP.name}</b> ({fmt(selP.mmr)}) y queda en {fmt(afterSel)} · disponible hasta el límite: {fmt(C.LIMIT - afterSel)}</>
           ) : (
             <>Turno de <b>{C.CAP_LABEL[tn.captain]}</b>: toca un jugador para seleccionarlo</>
           )}
         </div>
-        <button className="btn red" onClick={onConfirm} disabled={!selP || done}>Confirmar selección</button>
+        <button className="btn red" onClick={onConfirm} disabled={!selOk || done}>Confirmar selección</button>
         <button className="btn" onClick={onUndo} disabled={!state.picks.length}>Deshacer última</button>
         <button className="btn" onClick={onReset}>Reiniciar draft</button>
         <button className="btn" onClick={onFinish} disabled={!done}>Finalizar torneo</button>

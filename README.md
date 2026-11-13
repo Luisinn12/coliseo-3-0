@@ -17,6 +17,15 @@ npm test           # pruebas de la lógica (sorteo, snake, 16 picks, deshacer, s
 
 Requiere Node.js 18 o superior.
 
+## Restricción de MMR por equipo
+
+- Objetivo 18,848.25 · **límite máximo 19,148** (capitán incluido) · límite inferior orientativo 18,548 (no se impone).
+- Antes de cada selección se comprueba (a) que el equipo no supere 19,148 y (b) que, tras la jugada, **siga existiendo un reparto
+  de los jugadores restantes** que complete los 4 equipos de 5 sin pasar el límite (búsqueda exacta con poda, `feasible()` en `src/logic/coliseo.js`).
+- Los jugadores que no cumplen aparecen con 🔒, sin poder confirmarse; al tocarlos se explica el motivo y cuánto excederían el límite.
+- La misma validación vive dentro de `pick()`, así que no hay otra vía para saltarla. Al restaurar el progreso guardado
+  (`sanitize()`), se reproduce cada jugada con todas las reglas y se descarta lo que no cumpla. Deshacer sólo quita selecciones.
+
 ## Despliegue en Vercel
 
 1. Sube esta carpeta a un repositorio de GitHub.

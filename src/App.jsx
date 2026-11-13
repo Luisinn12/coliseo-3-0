@@ -11,7 +11,8 @@ import FinalScreen from './components/FinalScreen.jsx';
 import Modal from './components/Modal.jsx';
 
 export default function App() {
-  const [state, setState] = useState(loadState);
+  const [boot] = useState(loadState); // { state, repaired }: el estado guardado se revalida con todas las reglas
+  const [state, setState] = useState(boot.state);
   const [selected, setSelected] = useState(null);
   const [modal, setModal] = useState(null);
   const [copyText, setCopyText] = useState(null);
@@ -20,6 +21,9 @@ export default function App() {
 
   // guardado automático del progreso
   useEffect(() => { saveState(state); }, [state]);
+  useEffect(() => {
+    if (boot.repaired) toast('Se restauró el progreso hasta la última selección válida (cumple el límite de MMR)');
+  }, []);
 
   const screen = state.finished ? 'final' : (state.first && state.started ? 'draft' : 'draw');
 
@@ -88,7 +92,7 @@ export default function App() {
         )}
       </div>
       <Modal kind={modal} onAction={modalAction} />
-      <footer>Coliseo 3.0 · MMR según encuesta · Total 75,393 · Objetivo por equipo 18,848.25 · El progreso se guarda automáticamente en este navegador</footer>
+      <footer>Coliseo 3.0 · MMR según encuesta · Total 75,393 · Objetivo por equipo 18,848.25 · Límite máximo por equipo 19,148 · El progreso se guarda automáticamente en este navegador</footer>
     </>
   );
 }

@@ -1,11 +1,14 @@
 import * as C from '../logic/coliseo.js';
 import { fmt, sgn, COL } from '../utils/format.js';
 
-export default function TeamCard({ team: t, proj, tn, flashCap, newPick }) {
+export default function TeamCard({ team: t, proj, tn, flashCap, newPick, allowed, poolSize }) {
   const dev = t.total - C.TARGET, pdev = proj - C.TARGET;
   const cls = C.deviationClass(t.size === 5 ? dev : pdev);
   const active = tn && !tn.done && tn.captain === t.captain;
   const pct = t.total / C.TARGET * 100;
+  const room = C.LIMIT - t.total;
+  const limPct = Math.min(100, t.total / C.LIMIT * 100);
+  const full = t.size >= 5;
   const slots = [];
   for (let i = 0; i < 4; i++) {
     const m = t.members[i];
@@ -36,8 +39,19 @@ export default function TeamCard({ team: t, proj, tn, flashCap, newPick }) {
       {t.size < 5 && (
         <div className="kv"><span>Proyección final</span><b>{fmt(proj)} ({sgn(pdev)})</b></div>
       )}
+      <div className="kv"><span>Límite máximo</span><b>{fmt(C.LIMIT)}</b></div>
+      <div className="kv"><span>MMR disponible hasta el límite</span><b className={room < 0 ? 'neg-d' : ''}>{fmt(room)}</b></div>
+      <div className="limbar" title={`Límite ${fmt(C.LIMIT)} · objetivo ${fmt(C.TARGET)}`}>
+        <div style={{ width: limPct.toFixed(1) + '%' }}></div>
+        <i style={{ left: (C.TARGET / C.LIMIT * 100).toFixed(2) + '%' }}></i>
+        <i className="lim"></i>
+      </div>
+      <div className="kv"><span>Selecciones permitidas ahora</span><b>{full ? '—' : `${allowed}/${poolSize}`}</b></div>
       <div style={{ marginTop: 6 }}>
-        <span className={`pill ${cls}`}>{cls === 'green' ? 'MUY CERCA' : cls === 'yellow' ? 'DESVÍO MODERADO' : 'DESVÍO ALTO'}</span>
+        <span className={`pill ${cls}`}>{cls === 'green' ? 'MUY CERCA' : cls === 'yellow' ? 'DESVÍO MODERADO' : 'DESVÍO ALTO'}</span>{' '}
+        {full
+          ? <span className="pill green">EQUIPO COMPLETO</span>
+          : <span className={'pill ' + (allowed > 0 ? 'green' : 'red')}>{allowed > 0 ? 'SELECCIÓN PERMITIDA' : 'SELECCIÓN BLOQUEADA'}</span>}
       </div>
     </div>
   );

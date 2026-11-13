@@ -27,6 +27,11 @@
   const TOTAL = PLAYERS.reduce((a, p) => a + p.mmr, 0);
   const TARGET = TOTAL / 4;
   const TOTAL_PICKS = 16;
+  // ===== RESTRICCIÓN DE MMR POR EQUIPO =====
+  const MARGIN = 300;                    // tolerancia de equilibrio (no es un objetivo)
+  const LIMIT = 19148;                   // máximo permitido por equipo, capitán incluido
+  const LOWER_GUIDE = 18548;             // límite inferior orientativo (no se impone)
+  const fmtN = n => Math.round(n).toLocaleString('en-US');
 
   const initialState = () => ({ v: 1, first: null, started: false, finished: false, picks: [] });
 
@@ -66,6 +71,8 @@
     if (!p) throw new Error('Jugador inexistente');
     if (p.captain) throw new Error('Los capitanes no se seleccionan entre sí');
     if (s.picks.some(x => x.player === pid)) throw new Error('Jugador ya seleccionado');
+    const c = check(s, cap, pid);
+    if (!c.ok) throw new Error(c.message);
     return Object.assign({}, s, { picks: s.picks.concat([{ captain: cap, player: pid }]) });
   }
   function undo(s) {
@@ -132,12 +139,108 @@
     const need = (TARGET - totals[t.captain]) / left[t.captain];
     const seq = t.order.slice(s.picks.length + 1);
     const pool = available(s);
-    return pool.map(p => {
+    const allowed = pool.filter(p => check(s, t.captain, p.id).ok);
+    return allowed.map(p => {
       const tt = Object.assign({}, totals); tt[t.captain] += p.mmr;
       const ll = Object.assign({}, left); ll[t.captain]--;
       const sim = simulate(tt, ll, pool.filter(q => q.id !== p.id), seq);
       return { player: p, spread: sim.spread, gap: Math.abs(p.mmr - need), need };
     }).sort((a, b) => a.spread - b.spread || a.gap - b.gap || b.player.mmr - a.player.mmr);
+  }
+
+  // ===== FACTIBILIDAD =====
+  // ¿Existe un reparto de los jugadores restantes que complete a cada equipo (slots[t] integrantes más)
+  // sin que ningún equipo supere LIMIT? Búsqueda exacta con poda y memoización.
+  function feasible(totals, slots, mmrs) {
+    const pool = mmrs.slice().sort((a, b) => b - a);
+    const n = pool.length;
+    if (slots.reduce((a, b) => a + b, 0) !== n) return false;
+    const tt = totals.slice(), ss = slots.slice(), failed = new Set();
+    const suffix = new Array(n + 1).fill(0);
+    for (let i = n - 1; i >= 0; i--) suffix[i] = suffix[i + 1] + pool[i];
+    function dfs(i) {
+      if (i === n) return true;
+      let cap = 0; const sigs = [];
+      for (let t = 0; t < tt.length; t++) {
+        if (ss[t] > 0) {
+          cap += LIMIT - tt[t];
+          if (tt[t] + ss[t] * pool[n - 1] > LIMIT) return false; // ni con los más baratos le alcanza
+          sigs.push(tt[t] + ':' + ss[t]);
+        }
+      }
+      if (suffix[i] > cap) return false;
+      const key = i + '|' + sigs.slice().sort().join(',');
+      if (failed.has(key)) return false;
+      const tried = new Set();
+      for (let t = 0; t < tt.length; t++) {
+        if (ss[t] <= 0 || tt[t] + pool[i] > LIMIT) continue;
+        const sig = tt[t] + ':' + ss[t];
+        if (tried.has(sig)) continue; // equipos idénticos: simetría
+        tried.add(sig);
+        tt[t] += pool[i]; ss[t]--;
+        if (dfs(i + 1)) return true;
+        tt[t] -= pool[i]; ss[t]++;
+      }
+      failed.add(key);
+      return false;
+    }
+    return dfs(0);
+  }
+
+  // Comprueba si el capitán `cap` puede tomar a `pid` (sin considerar de quién es el turno).
+  function check(s, cap, pid) {
+    const p = BY_ID[pid];
+    if (!p || p.captain) return { ok: false, reason: 'invalid', message: 'Jugador no seleccionable' };
+    if (s.picks.some(x => x.player === pid)) return { ok: false, reason: 'taken', message: 'Jugador ya seleccionado' };
+    const ts = teams(s), t = ts.find(x => x.captain === cap);
+    if (!t || t.size >= 5) return { ok: false, reason: 'full', message: 'El equipo ya está completo' };
+    const newTotal = t.total + p.mmr;
+    if (newTotal > LIMIT) {
+      const excess = newTotal - LIMIT;
+      return { ok: false, reason: 'limit', newTotal, excess,
+        message: p.name + ' (' + fmtN(p.mmr) + ') bloqueado: ' + CAP_LABEL[cap] + ' quedaría en ' + fmtN(newTotal) +
+          ' MMR y excedería el límite de ' + fmtN(LIMIT) + ' por ' + fmtN(excess) + ' MMR.' };
+    }
+    const totals = ts.map(x => x.captain === cap ? newTotal : x.total);
+    const slots = ts.map(x => (5 - x.size) - (x.captain === cap ? 1 : 0));
+    const rest = available(s).filter(q => q.id !== pid).map(q => q.mmr);
+    if (!feasible(totals, slots, rest)) {
+      return { ok: false, reason: 'infeasible', newTotal,
+        message: p.name + ' (' + fmtN(p.mmr) + ') bloqueado: con esta elección ya no sería posible completar los cuatro equipos de 5 dentro del límite de ' + fmtN(LIMIT) + ' MMR.' };
+    }
+    return { ok: true, newTotal, room: LIMIT - newTotal };
+  }
+
+  // Resultado de `check` para cada jugador disponible (id -> resultado), para el capitán `cap`.
+  function options(s, cap) {
+    const out = {};
+    available(s).forEach(p => { out[p.id] = check(s, cap, p.id); });
+    return out;
+  }
+
+  // Reconstruye un estado guardado aplicando TODAS las reglas pick a pick.
+  // Si algo no cumple (límite, turno, repetidos...), conserva sólo el tramo válido anterior.
+  function sanitize(raw) {
+    const base = initialState();
+    if (!raw || typeof raw !== 'object') return { state: base, repaired: false };
+    const first = CAPS.indexOf(raw.first) >= 0 ? raw.first : null;
+    const rawPicks = Array.isArray(raw.picks) ? raw.picks : [];
+    let repaired = false;
+    let cur = Object.assign({}, base, { first, started: true });
+    if (first) {
+      for (const pk of rawPicks) {
+        try { cur = pick(cur, pk && pk.captain, pk && pk.player); }
+        catch (e) { repaired = true; break; }
+      }
+    } else if (rawPicks.length) repaired = true;
+    const picks = cur.picks;
+    let finished = false;
+    if (raw.finished) {
+      finished = picks.length === TOTAL_PICKS && validateFinal(Object.assign({}, cur)).length === 0;
+      if (!finished) repaired = true;
+    }
+    const started = !!first && (!!raw.started || picks.length > 0);
+    return { state: Object.assign({}, base, { first, started, finished, picks }), repaired };
   }
 
   // ===== VALIDACIÓN FINAL =====
@@ -148,14 +251,17 @@
     const ids = ts.flatMap(t => [t.captain].concat(t.members.map(m => m.id)));
     if (new Set(ids).size !== 20) errs.push('Hay jugadores repetidos o faltantes');
     if (s.picks.length !== TOTAL_PICKS) errs.push('Selecciones: ' + s.picks.length + '/16');
+    ts.forEach(t => { if (t.total > LIMIT) errs.push('Equipo ' + t.captain + ' supera el límite de ' + LIMIT); });
     return errs;
   }
 
   const api = { PLAYERS, BY_ID, CAPS, CAP_LABEL, TOTAL, TARGET, TOTAL_PICKS, initialState, drawWinner, snakeOrder, turn,
-    available, pick, undo, teams, projection, stats, balanceLevel, deviationClass, recommend, validateFinal };
+    available, pick, undo, teams, projection, stats, balanceLevel, deviationClass, recommend, validateFinal,
+    MARGIN, LIMIT, LOWER_GUIDE, feasible, check, options, sanitize };
 
 export {
   PLAYERS, BY_ID, CAPS, CAP_LABEL, TOTAL, TARGET, TOTAL_PICKS, initialState, drawWinner, snakeOrder, turn,
-  available, pick, undo, teams, projection, stats, balanceLevel, deviationClass, recommend, validateFinal
+  available, pick, undo, teams, projection, stats, balanceLevel, deviationClass, recommend, validateFinal,
+  MARGIN, LIMIT, LOWER_GUIDE, feasible, check, options, sanitize
 };
 export default api;

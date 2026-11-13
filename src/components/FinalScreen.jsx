@@ -50,6 +50,8 @@ export default function FinalScreen({ state, copyText, onPng, onCopy, onBack, on
         <div className="card stat"><div className="l">Menor MMR</div><div className="v">{C.CAP_LABEL[st.minTeam]} · {fmt(st.min)}</div></div>
         <div className="card stat"><div className="l">Diferencia máxima</div><div className="v">{fmt(st.spread)}</div></div>
         <div className="card stat"><div className="l">Promedio de equipos</div><div className="v">{st.avg.toFixed(2)}</div></div>
+        <div className="card stat"><div className="l">Límite por equipo</div><div className="v">{fmt(C.LIMIT)} <span style={{ fontSize: 14, color: rank.every(t => t.total <= C.LIMIT) ? 'var(--green)' : 'var(--rojo)' }}>{rank.every(t => t.total <= C.LIMIT) ? '✔ cumplido' : '✘ superado'}</span></div></div>
+        <div className="card stat"><div className="l">Dentro de {fmt(C.LOWER_GUIDE)} a {fmt(C.LIMIT)}</div><div className="v">{rank.filter(t => t.total >= C.LOWER_GUIDE && t.total <= C.LIMIT).length} / 4</div></div>
         <div className="card stat"><div className="l">Equilibrio del torneo</div><div className="v"><span className={`pill ${bl.cls}`} style={{ fontSize: 18 }}>{bl.label}</span></div></div>
       </div>
       <div className="bar">
