@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import * as C from '../logic/coliseo.js';
 import { fmt, sgn } from '../utils/format.js';
 import TeamCard from './TeamCard.jsx';
-import OrderPanel from './OrderPanel.jsx';
 
 export default function DraftScreen({ state, selected, onSelect, flash, onConfirm, onUndo, onReset, onFinish }) {
   const tn = C.turn(state), ts = C.teams(state), proj = C.projection(state), pool = C.available(state);
@@ -60,7 +59,6 @@ export default function DraftScreen({ state, selected, onSelect, flash, onConfir
         </div>
         <div className="lim-note">Límite inferior orientativo {fmt(C.LOWER_GUIDE)} · el margen de {C.MARGIN} MMR es una tolerancia, no una meta</div>
       </div>
-      <OrderPanel first={state.first} picks={state.picks} tn={tn} />
       <div className="main">
         <div className="card">
           <div className="hd"><span>JUGADORES DISPONIBLES ({pool.length})</span><span style={{ fontFamily: 'Rajdhani', fontSize: 13, color: 'var(--mut)' }}>Elige libremente · ★ = sugerido · 🔒 = bloqueado</span></div>
